@@ -1,4 +1,5 @@
 ##ES6 入门
+[TOC]
 ##2.let 和 const
 ###let命令
 ES6新增了**let**命令，用来声明变量。它的用法类似于var，但是所声明的变量，只在let命令所在的代码块内有效。
@@ -126,7 +127,7 @@ foo // true
 [x, y = 'b'] = ['a']; // x='a', y='b'
 [x, y = 'b'] = ['a', undefined]; // x='a', y='b'
 
-当一个值 '==='' 于下为undefined时 才可取默认值， null时会被赋值为null。
+当一个值 '===' 于下为undefined时 才可取默认值， null时会被赋值为null。
 
 //可用于对象
 var { bar, foo } = { foo: "aaa", bar: "bbb" };
@@ -199,3 +200,271 @@ jQuery.ajax = function (url, {
 
 
 ##4.字符串的扩展
+###模版字符串
+```
+var a = 5;
+var b = 10;
+tag`Hello ${ a + b } world ${ a * b }`;
+//函数tag依次会接收到多个参数。
+function tag(stringArr, value1, value2){
+  // ...
+}
+
+// 等同于
+
+function tag(stringArr, ...values){
+  // ...
+}
+tag函数所有参数的实际值如下。
+
+    第一个参数：['Hello ', ' world ', '']
+    第二个参数: 15
+    第三个参数：50
+
+tag(['Hello ', ' world ', ''], 15, 50)
+var a = 5;
+var b = 10;
+
+function tag(s, v1, v2) {
+  console.log(s[0]);
+  console.log(s[1]);
+  console.log(s[2]);
+  console.log(v1);
+  console.log(v2);
+
+  return "OK";
+}
+
+tag`Hello ${ a + b } world ${ a * b}`;
+// "Hello "
+// " world "
+// ""
+// 15
+// 50
+// "OK"
+
+//用于更深理解的例子
+var total = 30;
+var msg = passthru`The total is ${total} (${total*1.05} with tax)`;
+
+function passthru(literals) {
+  var result = '';
+  var i = 0;
+
+  while (i < literals.length) {
+    result += literals[i++];
+    if (i < arguments.length) {
+      result += arguments[i];
+    }
+  }
+
+  return result;
+}
+
+msg // "The total is 30 (31.5 with tax)"
+```
+
+##函数的扩展
+尾递归优化的实现
+
+尾递归优化只在严格模式下生效，那么正常模式下，或者那些不支持该功能的环境中，有没有办法也使用尾递归优化呢？回答是可以的，就是自己实现尾递归优化。
+它的原理非常简单。尾递归之所以需要优化，原因是调用栈太多，造成溢出，那么只要减少调用栈，就不会溢出。怎么做可以减少调用栈呢？就是采用“循环”换掉“递归”。
+下面是一个正常的递归函数。
+```
+function sum(x, y) {
+  if (y > 0) {
+    return sum(x + 1, y - 1);
+  } else {
+    return x;
+  }
+}
+
+sum(1, 100000)
+// Uncaught RangeError: Maximum call stack size exceeded(…)
+```
+上面代码中，sum是一个递归函数，参数x是需要累加的值，参数y控制递归次数。一旦指定sum递归100000次，就会报错，提示超出调用栈的最大次数。
+蹦床函数（trampoline）可以将递归执行转为循环执行。
+```
+function trampoline(f) {
+  while (f && f instanceof Function) {
+    f = f();
+  }
+  return f;
+}
+```
+上面就是蹦床函数的一个实现，它接受一个函数f作为参数。只要f执行后返回一个函数，就继续执行。注意，这里是返回一个函数，然后执行该函数，而不是函数里面调用函数，这样就避免了递归执行，从而就消除了调用栈过大的问题。
+然后，要做的就是将原来的递归函数，改写为每一步返回另一个函数。
+```
+function sum(x, y) {
+  if (y > 0) {
+    return sum.bind(null, x + 1, y - 1);
+  } else {
+    return x;
+  }
+}
+//上面代码中，sum函数的每次执行，都会返回自身的另一个版本。
+
+现在，使用蹦床函数执行sum，就不会发生调用栈溢出。
+trampoline(sum(1, 100000))
+// 100001
+```
+蹦床函数并不是真正的尾递归优化，下面的实现才是。
+```
+function tco(f) {
+  var value;
+  var active = false;
+  var accumulated = [];
+
+  return function accumulator() {
+    accumulated.push(arguments);
+    if (!active) {
+      active = true;
+      while (accumulated.length) {
+        value = f.apply(this, accumulated.shift());
+      }
+      active = false;
+      return value;
+    }
+  };
+}
+
+var sum = tco(function(x, y) {
+  if (y > 0) {
+    return sum(x + 1, y - 1)
+  }
+  else {
+    return x
+  }
+});
+
+sum(1, 100000)
+// 100001
+```
+上面代码中，tco函数是尾递归优化的实现，它的奥妙就在于状态变量active。默认情况下，这个变量是不激活的。一旦进入尾递归优化的过程，这个变量就激活了。然后，每一轮递归sum返回的都是undefined，所以就避免了递归执行；而accumulated数组存放每一轮sum执行的参数，总是有值的，这就保证了accumulator函数内部的while循环总是会执行。这样就很巧妙地将“递归”改成了“循环”，而后一轮的参数会取代前一轮的参数，保证了调用栈只有一层。
+
+##类
+//定义类
+```
+class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  toString() {
+    return '(' + this.x + ', ' + this.y + ')';
+  }
+}
+
+--------------------------------
+class Point {
+  constructor(){
+    // ...
+  }
+
+  toString(){
+    // ...
+  }
+
+  toValue(){
+    // ...
+  }
+}
+
+// 等同于
+
+Point.prototype = {
+  toString(){},
+  toValue(){}
+};
+```
+
+###getter setter
+```
+class MyClass {
+  constructor() {
+    // ...
+  }
+  get prop() {
+    return 'getter';
+  }
+  set prop(value) {
+    console.log('setter: '+value);
+  }
+}
+
+let inst = new MyClass();
+
+inst.prop = 123;
+// setter: 123
+
+inst.prop
+// 'getter'
+```
+###class的静态方法
+类相当于实例的原型，所有在类中定义的方法，都会被实例继承。如果在一个方法前，加上static关键字，就表示该方法不会被实例继承，而是直接通过类来调用，这就称为“静态方法”。
+```
+class Foo {
+  static classMethod() {
+    return 'hello';
+  }
+}
+
+Foo.classMethod() // 'hello'
+
+var foo = new Foo();
+foo.classMethod()
+// TypeError: undefined is not a function
+```
+###Class的静态属性和实例属性
+静态属性指的是Class本身的属性，即Class.propname，而不是定义在实例对象（this）上的属性。
+```
+//有效
+class Foo {
+}
+
+Foo.prop = 1;
+Foo.prop // 1
+// 以下两种写法都无效
+class Foo {
+  // 写法一
+  prop: 2
+
+  // 写法二
+  static prop: 2
+}
+
+Foo.prop // undefined
+```
+目前，只有这种写法可行，因为ES6明确规定，Class内部只有静态方法，没有静态属性。
+类的实例属性可以用等式，写入类的定义之中。 用 **"="**即可
+
+###Mixin模式的实现
+```
+function mix(...mixins) {
+  class Mix {}
+
+  for (let mixin of mixins) {
+    copyProperties(Mix, mixin);
+    copyProperties(Mix.prototype, mixin.prototype);
+  }
+
+  return Mix;
+}
+
+function copyProperties(target, source) {
+  for (let key of Reflect.ownKeys(source)) {
+    if ( key !== "constructor"
+      && key !== "prototype"
+      && key !== "name"
+    ) {
+      let desc = Object.getOwnPropertyDescriptor(source, key);
+      Object.defineProperty(target, key, desc);
+    }
+  }
+}
+class DistributedEdit extends mix(Loggable, Serializable) {
+  // ...
+}
+```
+上面代码的mix函数，可以将多个对象合成为一个类。使用的时候，只要继承这个类即可。
